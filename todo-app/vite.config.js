@@ -12,7 +12,11 @@ export default defineConfig({
   server: {
     proxy: {
       // toutes les requêtes commençant par '/api' seront transférées à 'http://localhost:8080'
-      '/api': 'http://localhost:8080',
+      '/api': {
+        target: 'http://127.0.0.1:8080', // Adresse du serveur Express
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })

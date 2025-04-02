@@ -1,6 +1,8 @@
 // app.js
 import express from 'express'
 import dotenv from 'dotenv'
+// Ajouter l'import de cors
+import cors from 'cors'
 
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -18,6 +20,9 @@ const app = express()
 
 const PORT = process.env.PORT || 8080
 
+// Ajouter ces middlewares avant les autres
+app.use(cors())
+app.use(express.json())
 // Servir les fichiers statiques de l'application REACT build
 app.use(express.static('dist'))
 // Middleware pour analyser les corps JSON des requêtes
@@ -68,10 +73,20 @@ app.get('/api/tasks', async (req, res) => {
 // POST : Créer une nouvelle tâche
 app.post('/api/tasks', async (req, res) => {
   try {
-    const newTask = req.body
+    const { title, completed } = req.body
+
+    // Validation des données
+    if (!title || typeof completed !== 'boolean') {
+      return res.status(400).json({ message: 'Invalid task format' })
+    }
+
+    const newTask = { title, completed }
+    console.log('Received new task:', newTask) // Log pour déboguer
+
     const result = await tasksCollection.insertOne(newTask) // Insérer un nouveau document
     res.status(201).json({ ...newTask, _id: result.insertedId }) // Répondre avec la tâche créée
   } catch (error) {
+    console.error('Erreur lors de la création de la tâche:', error) // Log pour déboguer
     res.status(400).json({ message: 'Échec de la création de la tâche.' })
   }
 })
@@ -124,6 +139,71 @@ app.delete('/api/tasks/:id', async (req, res) => {
   }
 })
 
+// Classe abstraite pour les actions sur les tâches
+class TaskAction {
+  execute(task) {
+    throw new Error('Method "execute" must be implemented')
+  }
+}
+
+// Action pour marquer une tâche comme terminée
+class CompleteTaskAction extends TaskAction {
+  async execute(task) {
+    task.completed = true
+    await tasksCollection.updateOne({ _id: task._id }, { $set: task })
+    return task
+  }
+}
+
+// Action pour mettre à jour la priorité d'une tâche
+class UpdatePriorityAction extends TaskAction {
+  constructor(priority) {
+    super()
+    this.priority = priority
+  }
+
+  async execute(task) {
+    task.priority = this.priority
+    await tasksCollection.updateOne({ _id: task._id }, { $set: task })
+    return task
+  }
+}
+
+// Endpoint pour exécuter une action sur une tâche
+app.post('/api/tasks/:id/action', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { actionType, actionData } = req.body
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Format d'ID invalide" })
+    }
+
+    const task = await tasksCollection.findOne({ _id: new ObjectId(id) })
+    if (!task) {
+      return res.status(404).json({ message: 'Tâche non trouvée' })
+    }
+
+    let action
+    switch (actionType) {
+      case 'complete':
+        action = new CompleteTaskAction()
+        break
+      case 'updatePriority':
+        action = new UpdatePriorityAction(actionData.priority)
+        break
+      default:
+        return res.status(400).json({ message: "Type d'action non supporté" })
+    }
+
+    const updatedTask = await action.execute(task)
+    res.json(updatedTask)
+  } catch (error) {
+    console.error("Erreur lors de l'exécution de l'action:", error)
+    res.status(500).json({ message: 'Erreur interne du serveur' })
+  }
+})
+
 // Rediriger toutes les autres requêtes vers index.html pour la gestion du routage côté client
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, 'dist', 'index.html'))
@@ -131,6 +211,6 @@ app.get('*', (req, res) => {
 
 // Démarrer le serveur et écouter sur le port configuré
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} via http://localhost:${PORT}`)
 })
