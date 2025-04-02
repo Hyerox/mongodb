@@ -17,3 +17,5 @@ Application Todo List implémentant le principe OCP de SOLID, permettant d'éten
 ### Structure de base
 
 L'application implémente le principe Open/Closed (OCP) à travers un système d'actions sur les tâches :
+
+test
